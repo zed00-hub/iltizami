@@ -1,0 +1,49 @@
+name: Build Iltizam APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android project
+        run: flutter create --platforms=android --org com.iltizam --project-name iltizam .
+
+      - name: Remove default template test
+        run: rm -f test/widget_test.dart
+
+      - name: Patch Android config (permissions, icon, desugaring)
+        run: python3 tool/patch_android.py
+
+      - name: Get packages
+        run: flutter pub get
+
+      - name: Analyze (non-blocking)
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings || true
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: iltizam-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
