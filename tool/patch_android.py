@@ -52,6 +52,12 @@ def patch_manifest():
     )
     if "ScheduledNotificationReceiver" not in s:
         s = s.replace("</application>", receivers + "    </application>", 1)
+    if "ActionBroadcastReceiver" not in s:
+        s = s.replace(
+            "</application>",
+            '        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver" />\n    </application>',
+            1,
+        )
     write(MANIFEST, s)
     print("manifest patched")
 

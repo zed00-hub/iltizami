@@ -2,6 +2,16 @@ enum HabitKind { check, count, timer }
 
 enum PeriodType { day, week, month, year }
 
+Set<int> _intSet(dynamic v) {
+  final out = <int>{};
+  if (v is List) {
+    for (final e in v) {
+      if (e is num) out.add(e.toInt());
+    }
+  }
+  return out;
+}
+
 int _idx(dynamic v, int max, int def) {
   if (v is num) {
     final i = v.toInt();
@@ -35,6 +45,15 @@ class Habit {
   Map<int, double> log;
   int? timerStartMs;
 
+  /// دافع العادة (لماذا؟)، يظهر في الإشعارات وشاشة التفاصيل
+  String why;
+
+  /// أيام سجّلتَ فيها صراحةً أنها فاتت (للعادات من نوع تأكيد)
+  Set<int> missed;
+
+  /// تحدّي 30 أو 66 يومًا (0 = بدون)
+  int challenge;
+
   Habit({
     required this.id,
     required this.name,
@@ -51,7 +70,11 @@ class Habit {
     this.archived = false,
     Map<int, double>? log,
     this.timerStartMs,
-  }) : log = log ?? <int, double>{};
+    this.why = '',
+    Set<int>? missed,
+    this.challenge = 0,
+  })  : log = log ?? <int, double>{},
+        missed = missed ?? <int>{};
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -69,6 +92,9 @@ class Habit {
         'archived': archived,
         'log': log.map((k, v) => MapEntry(k.toString(), v)),
         'timer': timerStartMs,
+        'why': why,
+        'missed': missed.toList(),
+        'challenge': challenge,
       };
 
   factory Habit.fromJson(Map<String, dynamic> j) {
@@ -96,6 +122,9 @@ class Habit {
       archived: j['archived'] == true,
       log: log,
       timerStartMs: (j['timer'] is num) ? (j['timer'] as num).toInt() : null,
+      why: (j['why'] ?? '').toString(),
+      missed: _intSet(j['missed']),
+      challenge: _idx(j['challenge'], 400, 0),
     );
   }
 }
@@ -110,13 +139,29 @@ class Settings {
   bool prayerNotif;
   bool streakGuard;
 
+  /// تجزئة رمز القفل (null = بدون قفل)
+  String? pinHash;
+
+  /// فترات الإجازة/المرض: [بداية، نهاية] بأرقام الأيام (شاملة)
+  List<List<int>> vacations;
+
+  /// تنبيه المراجعة الأسبوعية مساء الجمعة
+  bool weekReview;
+  int focusWork;
+  int focusBreak;
+
   Settings({
     this.weekStart = 7,
     this.wilaya = 15,
     this.hijriAdjust = 0,
     this.prayerNotif = false,
     this.streakGuard = true,
-  });
+    this.pinHash,
+    List<List<int>>? vacations,
+    this.weekReview = true,
+    this.focusWork = 25,
+    this.focusBreak = 5,
+  }) : vacations = vacations ?? <List<int>>[];
 
   Map<String, dynamic> toJson() => {
         'ws': weekStart,
@@ -124,6 +169,11 @@ class Settings {
         'hadj': hijriAdjust,
         'pn': prayerNotif,
         'sg': streakGuard,
+        'pin': pinHash,
+        'vac': vacations,
+        'wr': weekReview,
+        'fw': focusWork,
+        'fb': focusBreak,
       };
 
   factory Settings.fromJson(Map<String, dynamic> j) => Settings(
@@ -132,5 +182,32 @@ class Settings {
         hijriAdjust: (j['hadj'] is num) ? (j['hadj'] as num).toInt() : 0,
         prayerNotif: j['pn'] == true,
         streakGuard: j['sg'] != false,
+        pinHash: (j['pin'] is String && (j['pin'] as String).isNotEmpty) ? j['pin'] as String : null,
+        vacations: _vacList(j['vac']),
+        weekReview: j['wr'] != false,
+        focusWork: clampInt(j['fw'], 1, 180, 25),
+        focusBreak: clampInt(j['fb'], 1, 60, 5),
       );
+}
+
+int clampInt(dynamic v, int lo, int hi, int def) {
+  if (v is num) {
+    final i = v.toInt();
+    if (i < lo) return lo;
+    if (i > hi) return hi;
+    return i;
+  }
+  return def;
+}
+
+List<List<int>> _vacList(dynamic v) {
+  final out = <List<int>>[];
+  if (v is List) {
+    for (final e in v) {
+      if (e is List && e.length >= 2 && e[0] is num && e[1] is num) {
+        out.add([(e[0] as num).toInt(), (e[1] as num).toInt()]);
+      }
+    }
+  }
+  return out;
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'hijri.dart';
 import 'notifications.dart';
 import 'prayer.dart';
@@ -147,6 +148,8 @@ class PrayerScreen extends StatelessWidget {
             ],
           ),
         ),
+        const SectionTitle('صلواتي'),
+        const PrayerTracker(),
         const SectionTitle('مواقيت اليوم'),
         for (int i = 0; i < rows.length; i++)
           Builder(builder: (context) {
@@ -239,6 +242,194 @@ class MiniNext extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
       ),
       child: const Text('القادمة', style: TextStyle(color: kEmerald, fontSize: 11, fontWeight: FontWeight.w800)),
+    );
+  }
+}
+
+
+// ═════════════════════════ متابعة الصلوات الخمس ═════════════════════════
+
+const List<String> kPrayStateName = ['لم تُحدَّد', 'في جماعة', 'منفردة', 'فاتت'];
+
+class PrayerTracker extends StatefulWidget {
+  const PrayerTracker({super.key});
+
+  @override
+  State<PrayerTracker> createState() => _PrayerTrackerState();
+}
+
+class _PrayerTrackerState extends State<PrayerTracker> {
+  int day = todayNum();
+
+  @override
+  Widget build(BuildContext context) {
+    final store = StoreScope.of(context);
+    final today = todayNum();
+    final w = kWilayas[clampI(store.settings.wilaya, 0, kWilayas.length - 1)];
+    final times = prayersFor(day, w);
+    final st = store.prayerState(day);
+
+    // إحصائيات آخر 30 يومًا
+    int loggedDays = 0;
+    int fullDays = 0;
+    int jama = 0;
+    int logged = 0;
+    final doneBy = List<int>.filled(5, 0);
+    final seenBy = List<int>.filled(5, 0);
+    for (int i = 0; i < 30; i++) {
+      final s = store.prayerLog[today - i];
+      if (s == null) continue;
+      loggedDays++;
+      bool full = true;
+      for (int p = 0; p < 5; p++) {
+        final c = s[p];
+        if (c != '0') {
+          logged++;
+          seenBy[p]++;
+        }
+        if (c == '1') jama++;
+        if (c == '1' || c == '2') {
+          doneBy[p]++;
+        } else {
+          full = false;
+        }
+      }
+      if (full) fullDays++;
+    }
+    // سلسلة الأيام الكاملة (اليوم غير المكتمل لا يكسرها)
+    int streak = 0;
+    for (int i = 0; i < 400; i++) {
+      final s = store.prayerLog[today - i];
+      final full = s != null && s.split('').every((c) => c == '1' || c == '2');
+      if (full) {
+        streak++;
+      } else if (i == 0) {
+        continue;
+      } else {
+        break;
+      }
+    }
+    int weakest = -1;
+    double weakRate = 2;
+    for (int p = 0; p < 5; p++) {
+      if (seenBy[p] < 3) continue;
+      final r = doneBy[p] / seenBy[p];
+      if (r < weakRate) {
+        weakRate = r;
+        weakest = p;
+      }
+    }
+
+    Color stateColor(String c) {
+      switch (c) {
+        case '1':
+          return kEmerald;
+        case '2':
+          return kGold;
+        case '3':
+          return kDanger;
+        default:
+          return kMuted;
+      }
+    }
+
+    return Column(
+      children: [
+        AppCard(
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => setState(() => day--),
+                    icon: const Icon(Icons.chevron_right_rounded, color: kText),
+                  ),
+                  Expanded(
+                    child: Text(day == today ? 'اليوم • ${fmtShort(day)}' : fmtDay(day),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: kText, fontWeight: FontWeight.w800)),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    onPressed: day >= today ? null : () => setState(() => day++),
+                    icon: Icon(Icons.chevron_left_rounded, color: day >= today ? kLine : kText),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              for (int i = 0; i < 5; i++)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 64,
+                        child: Text(kPrayerNames[i],
+                            style: const TextStyle(color: kText, fontSize: 16, fontWeight: FontWeight.w800)),
+                      ),
+                      Text(fmtHour(times.byIndex(i)),
+                          textDirection: TextDirection.ltr,
+                          style: const TextStyle(color: kMuted, fontSize: 13)),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: () {
+                          if (day > today) return;
+                          HapticFeedback.lightImpact();
+                          store.cyclePrayer(day, i);
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          width: 108,
+                          padding: const EdgeInsets.symmetric(vertical: 9),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: a(stateColor(st[i]), st[i] == '0' ? 0.0 : 0.16),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: stateColor(st[i]).withAlpha(st[i] == '0' ? 90 : 255)),
+                          ),
+                          child: Text(
+                            st[i] == '1' ? '🕌 جماعة' : (st[i] == '2' ? 'منفردة' : (st[i] == '3' ? '✗ فاتت' : '—')),
+                            style: TextStyle(
+                                color: stateColor(st[i]), fontSize: 13.5, fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 4),
+              const Text('اضغط لتغيير الحالة: جماعة ← منفردة ← فاتت ← مسح',
+                  style: TextStyle(color: kMuted, fontSize: 11)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        TwoColumn(children: [
+          StatTile(
+            emoji: '🕌',
+            label: 'في جماعة (30 يومًا)',
+            value: logged == 0 ? '—' : '${(jama / logged * 100).round()}%',
+            sub: logged == 0 ? 'سجّل صلواتك' : '$jama من $logged',
+            color: kEmerald,
+          ),
+          StatTile(
+            emoji: '🔥',
+            label: 'أيام الخمس كاملة',
+            value: '$streak',
+            sub: 'متتالية • $fullDays من $loggedDays يومًا مسجّلًا',
+            color: kGold,
+          ),
+          if (weakest >= 0)
+            StatTile(
+              emoji: '🎯',
+              label: 'الأضعف محافظةً',
+              value: kPrayerNames[weakest],
+              sub: '${(weakRate * 100).round()}%',
+              color: kDanger,
+            ),
+        ]),
+      ],
     );
   }
 }

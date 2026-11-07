@@ -20,7 +20,7 @@ class HabitDetailScreen extends StatelessWidget {
     }
     final ws = store.settings.weekStart;
     final today = todayNum();
-    final st = computeStats(h, ws, today);
+    final st = store.statsFor(h);
     final color = habitColor(h);
     final pcLabel = periodAdjUnit(h.period);
     final level = levelFor(xpOf(h, st));
@@ -153,6 +153,46 @@ class HabitDetailScreen extends StatelessWidget {
             ),
           ),
 
+          if (h.why.isNotEmpty) ...[
+            const SectionTitle('لماذا؟'),
+            AppCard(child: Text(h.why, style: const TextStyle(color: kText, height: 1.7, fontSize: 14.5))),
+          ],
+          if (h.challenge > 0) ...[
+            const SectionTitle('التحدّي 🎯'),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    st.bestStreak >= h.challenge
+                        ? 'أكملتَ تحدّي ${h.challenge} يومًا 🏅'
+                        : 'تحدّي ${h.challenge} يومًا متتاليًا: ${st.currentStreak} / ${h.challenge}',
+                    style: TextStyle(
+                        color: st.bestStreak >= h.challenge ? kGold : kText,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: LinearProgressIndicator(
+                      value: clampD(st.currentStreak / h.challenge, 0.0, 1.0),
+                      minHeight: 8,
+                      backgroundColor: a(color, 0.14),
+                      valueColor: AlwaysStoppedAnimation<Color>(color),
+                    ),
+                  ),
+                  if (st.bestStreak < h.challenge)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text('تبقّى ${h.challenge - st.currentStreak} يومًا. أي يوم فائت يعيدك للصفر.',
+                          style: const TextStyle(color: kMuted, fontSize: 12)),
+                    ),
+                ],
+              ),
+            ),
+          ],
+
           const SectionTitle('الأرقام القياسية 🏆'),
           TwoColumn(children: [
             StatTile(
@@ -208,6 +248,14 @@ class HabitDetailScreen extends StatelessWidget {
                 emoji: '∑',
                 label: 'المجموع الكلي',
                 value: h.kind == HabitKind.timer ? fmtMinutes(st.total) : '${num1(st.total)} ${h.unit}',
+              ),
+            if (h.kind == HabitKind.check && h.period == PeriodType.day)
+              StatTile(
+                emoji: '❌',
+                label: 'أيام فاتت صراحةً',
+                value: '${st.missedDays}',
+                sub: 'سجّلتها "فاتت"',
+                color: st.missedDays > 0 ? kDanger : kMuted,
               ),
             if (st.bestWeekday > 0)
               StatTile(

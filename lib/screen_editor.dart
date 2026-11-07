@@ -78,6 +78,8 @@ class _HabitEditorPageState extends State<HabitEditorPage> {
   final _name = TextEditingController();
   final _target = TextEditingController(text: '1');
   final _unit = TextEditingController();
+  final _why = TextEditingController();
+  int challenge = 0;
   String emoji = '🎯';
   int colorIdx = 0;
   HabitKind kind = HabitKind.check;
@@ -97,6 +99,8 @@ class _HabitEditorPageState extends State<HabitEditorPage> {
       _name.text = h.name;
       _target.text = num1(h.target);
       _unit.text = h.unit;
+      _why.text = h.why;
+      challenge = h.challenge;
       emoji = h.emoji;
       colorIdx = h.colorIdx;
       kind = h.kind;
@@ -118,6 +122,7 @@ class _HabitEditorPageState extends State<HabitEditorPage> {
     _name.dispose();
     _target.dispose();
     _unit.dispose();
+    _why.dispose();
     super.dispose();
   }
 
@@ -167,6 +172,8 @@ class _HabitEditorPageState extends State<HabitEditorPage> {
       h.period = period;
       h.target = target;
       h.unit = unit;
+      h.why = _why.text.trim();
+      h.challenge = (kind == HabitKind.check && period == PeriodType.day) ? challenge : 0;
       h.reminderKind = reminderKind;
       h.reminderMinutes = rm;
       h.reminderPrayer = prayer;
@@ -181,6 +188,8 @@ class _HabitEditorPageState extends State<HabitEditorPage> {
         period: period,
         target: target,
         unit: unit,
+        why: _why.text.trim(),
+        challenge: (kind == HabitKind.check && period == PeriodType.day) ? challenge : 0,
         reminderKind: reminderKind,
         reminderMinutes: rm,
         reminderPrayer: prayer,
@@ -258,6 +267,12 @@ class _HabitEditorPageState extends State<HabitEditorPage> {
             style: const TextStyle(color: kText, fontSize: 17),
             decoration: _dec('مثال: صلاة الفجر في المسجد'),
           ),
+          _label('لماذا هذه العادة؟ (دافعك، يظهر في التذكير)'),
+          TextField(
+            controller: _why,
+            style: const TextStyle(color: kText, fontSize: 16),
+            decoration: _dec('مثال: لأبقى قريبًا من الله وأبني انضباطي'),
+          ),
           _label('الرمز'),
           Wrap(
             spacing: 8,
@@ -329,6 +344,20 @@ class _HabitEditorPageState extends State<HabitEditorPage> {
               onSelectionChanged: (s) => setState(() => period = s.first),
             ),
           ),
+          if (kind == HabitKind.check && period == PeriodType.day) ...[
+            _label('تحدّي (اختياري)'),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final c in const [0, 30, 66])
+                  ChoiceChip(
+                    label: Text(c == 0 ? 'بدون' : '$c يومًا'),
+                    selected: challenge == c,
+                    onSelected: (_) => setState(() => challenge = c),
+                  ),
+              ],
+            ),
+          ],
           if (!_targetFixed) ...[
             _label(targetLabel),
             TextField(

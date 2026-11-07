@@ -15,11 +15,11 @@ double stepFor(Habit h) {
   return 1;
 }
 
-String progressText(Habit h, double pv, bool todayDoneForDay) {
+String progressText(Habit h, double pv, bool todayDoneForDay, {bool missed = false}) {
   final u = h.unit.isEmpty ? '' : ' ${h.unit}';
   switch (h.kind) {
     case HabitKind.check:
-      if (h.period == PeriodType.day) return todayDoneForDay ? 'تم ✓' : 'لم يتم بعد';
+      if (h.period == PeriodType.day) return todayDoneForDay ? 'تم ✓' : (missed ? 'فاتت ✗' : 'لم يتم بعد');
       return '${num1(pv)} / ${num1(h.target)} ${periodThis(h.period)}';
     case HabitKind.count:
       final tail = h.period == PeriodType.day ? '' : ' ${periodThis(h.period)}';
@@ -38,10 +38,9 @@ class HabitActions extends StatelessWidget {
 
   void _act(BuildContext context, AppStore store, VoidCallback fn) {
     HapticFeedback.lightImpact();
-    final ws = store.settings.weekStart;
-    final before = computeStats(habit, ws, todayNum()).currentStreak;
+    final before = store.statsFor(habit).currentStreak;
     fn();
-    final after = computeStats(habit, ws, todayNum()).currentStreak;
+    final after = store.statsFor(habit).currentStreak;
     if (after > before && kMilestones.contains(after)) {
       toast(context, '🔥 ما شاء الله! سلسلة ${periodCount(habit.period, after)}');
     }
@@ -67,21 +66,44 @@ class HabitActions extends StatelessWidget {
     final v = habit.log[day] ?? 0;
     final isToday = day == todayNum();
 
+    if (day > todayNum()) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.event_outlined, color: kMuted, size: 22),
+            Text('مخطَّط', style: TextStyle(color: kMuted, fontSize: 10.5)),
+          ],
+        ),
+      );
+    }
+
     switch (habit.kind) {
       case HabitKind.check:
-        final done = v > 0;
+        final cs = store.checkState(habit, day);
+        final done = cs == 1;
+        final missed = cs == 2;
+        final daily = habit.period == PeriodType.day;
         return GestureDetector(
-          onTap: () => _act(context, store, () => store.toggleCheck(habit, day)),
+          onTap: () => _act(context, store, () {
+            if (daily) {
+              store.cycleCheck(habit, day);
+            } else {
+              store.toggleCheck(habit, day);
+            }
+          }),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 220),
             width: 48,
             height: 48,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: done ? color : Colors.transparent,
-              border: Border.all(color: done ? color : kLine, width: 2),
+              color: done ? color : (missed ? a(kDanger, 0.16) : Colors.transparent),
+              border: Border.all(color: done ? color : (missed ? kDanger : kLine), width: 2),
             ),
-            child: Icon(Icons.check_rounded, size: 28, color: done ? Colors.black : kMuted),
+            child: Icon(missed ? Icons.close_rounded : Icons.check_rounded,
+                size: 28, color: done ? Colors.black : (missed ? kDanger : kMuted)),
           ),
         );
 
@@ -128,10 +150,9 @@ class HabitActions extends StatelessWidget {
                 filled: true,
                 onTap: () {
                   HapticFeedback.mediumImpact();
-                  final ws = store.settings.weekStart;
-                  final before = computeStats(habit, ws, todayNum()).currentStreak;
+                  final before = store.statsFor(habit).currentStreak;
                   final m = store.stopTimer(habit);
-                  final after = computeStats(habit, ws, todayNum()).currentStreak;
+                  final after = store.statsFor(habit).currentStreak;
                   toast(context, m >= 0.1 ? 'أُضيفت ${fmtMinutes(m)} ✓' : 'مدة قصيرة جدًا، لم تُسجَّل');
                   if (after > before && kMilestones.contains(after)) {
                     toast(context, '🔥 ما شاء الله! سلسلة ${periodCount(habit.period, after)}');
@@ -260,7 +281,7 @@ class HabitCard extends StatelessWidget {
                         style: const TextStyle(
                             color: kText, fontSize: 16.5, fontWeight: FontWeight.w800)),
                     const SizedBox(height: 3),
-                    Text(progressText(habit, pv, doneThatDay),
+                    Text(progressText(habit, pv, doneThatDay, missed: habit.missed.contains(day)),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: met ? color : kMuted, fontSize: 12.5)),

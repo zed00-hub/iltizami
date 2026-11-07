@@ -3,9 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'notifications.dart';
 import 'screen_editor.dart';
+import 'screen_lock.dart';
 import 'screen_more.dart';
 import 'screen_prayer.dart';
 import 'screen_stats.dart';
+import 'screen_tasks.dart';
 import 'screen_today.dart';
 import 'store.dart';
 import 'util.dart';
@@ -115,6 +117,7 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int tab = 0;
+  DateTime? _pausedAt;
 
   @override
   void initState() {
@@ -130,9 +133,18 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // عند الرجوع للتطبيق (ربما في يوم جديد) نحدّث الواجهة ونعيد جدولة الإشعارات
-    if (state == AppLifecycleState.resumed && mounted) {
-      final store = StoreScope.of(context);
+    if (!mounted) return;
+    final store = StoreScope.of(context);
+    if (state == AppLifecycleState.paused) {
+      _pausedAt = DateTime.now();
+    } else if (state == AppLifecycleState.resumed) {
+      // القفل بعد 30 ثانية في الخلفية
+      final p = _pausedAt;
+      if (p != null && DateTime.now().difference(p).inSeconds >= 30) {
+        store.lockNow();
+      }
+      _pausedAt = null;
+      // قد يكون يومًا جديدًا: نحدّث الواجهة ونعيد جدولة الإشعارات
       setState(() {});
       NotificationService.scheduleSoon(store);
     }
@@ -146,8 +158,12 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         body: Center(child: Text('🛡️', style: TextStyle(fontSize: 64))),
       );
     }
+    if (store.locked) {
+      return const LockScreen();
+    }
     final pages = <Widget>[
       TodayScreen(goTab: (i) => setState(() => tab = i)),
+      const TasksScreen(),
       const StatsScreen(),
       const PrayerScreen(),
       const MoreScreen(),
@@ -168,6 +184,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         onDestinationSelected: (i) => setState(() => tab = i),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.today_outlined), selectedIcon: Icon(Icons.today_rounded), label: 'اليوم'),
+          NavigationDestination(icon: Icon(Icons.checklist_outlined), selectedIcon: Icon(Icons.checklist_rounded), label: 'الخطط'),
           NavigationDestination(icon: Icon(Icons.insights_outlined), selectedIcon: Icon(Icons.insights_rounded), label: 'التحليلات'),
           NavigationDestination(icon: Icon(Icons.mosque_outlined), selectedIcon: Icon(Icons.mosque_rounded), label: 'الصلاة'),
           NavigationDestination(icon: Icon(Icons.shield_outlined), selectedIcon: Icon(Icons.shield_rounded), label: 'المزيد'),

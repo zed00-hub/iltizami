@@ -125,6 +125,7 @@ class HabitStats {
   final double rateAll;
   final double rateRecent;
   final int bestWeekday;
+  final int missedDays;
 
   const HabitStats({
     required this.curKey,
@@ -146,11 +147,14 @@ class HabitStats {
     required this.rateAll,
     required this.rateRecent,
     required this.bestWeekday,
+    required this.missedDays,
   });
 }
 
-HabitStats computeStats(Habit h, int weekStart, int today) {
+HabitStats computeStats(Habit h, int weekStart, int today, {bool Function(int day)? frozen}) {
   final pc = PeriodCalc(h.period, weekStart);
+  final useFz = frozen != null && h.period == PeriodType.day;
+  bool fz(int day) => useFz && frozen!(day);
   final target = h.target <= 0 ? 1.0 : h.target;
   final pv = periodValues(h, pc);
 
@@ -180,7 +184,12 @@ HabitStats computeStats(Habit h, int weekStart, int today) {
   // السلسلة الحالية (صارمة): الفترة الجارية لا تكسر السلسلة قبل انتهائها
   int streak = curMet ? 1 : 0;
   int k = pc.prev(curKey);
-  while (met(k)) {
+  while (true) {
+    if (!met(k) && fz(k)) {
+      k = pc.prev(k);
+      continue;
+    }
+    if (!met(k)) break;
     streak++;
     k = pc.prev(k);
   }
@@ -206,7 +215,7 @@ HabitStats computeStats(Habit h, int weekStart, int today) {
           bestStartKey = runStart;
           bestEndKey = kk;
         }
-      } else {
+      } else if (!fz(kk)) {
         run = 0;
       }
       kk = pc.next(kk);
@@ -235,7 +244,7 @@ HabitStats computeStats(Habit h, int weekStart, int today) {
     int kk = fromKey < startKey ? startKey : fromKey;
     while (kk <= curKey) {
       final m = met(kk);
-      if (!(kk == curKey && !m)) {
+      if (!(kk == curKey && !m) && !(!m && fz(kk))) {
         denom++;
         if (m) good++;
       }
@@ -274,6 +283,7 @@ HabitStats computeStats(Habit h, int weekStart, int today) {
   double s = 0;
   for (int d = startDay; d <= lastDay; d++) {
     final v = h.log[d] ?? 0;
+    if (v <= 0 && fz(d)) continue;
     double x;
     if (v <= 0) {
       x = 0;
@@ -283,6 +293,11 @@ HabitStats computeStats(Habit h, int weekStart, int today) {
       x = clampD(v / target, 0.0, 1.0);
     }
     s = s * mult + x * (1 - mult);
+  }
+
+  int missedDays = 0;
+  for (final d in h.missed) {
+    if (d <= today) missedDays++;
   }
 
   int bestWeekday = 0;
@@ -314,6 +329,7 @@ HabitStats computeStats(Habit h, int weekStart, int today) {
     rateAll: rateAll,
     rateRecent: rateRecent,
     bestWeekday: bestWeekday,
+    missedDays: missedDays,
   );
 }
 

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'habit_widgets.dart';
 import 'hijri.dart';
 import 'models.dart';
+import 'models_ext.dart';
+import 'planning.dart';
+import 'screen_tasks.dart';
 import 'prayer.dart';
 import 'screen_editor.dart';
 import 'screen_habit.dart';
@@ -20,6 +23,14 @@ class TodayScreen extends StatefulWidget {
 
 class _TodayScreenState extends State<TodayScreen> {
   int? picked;
+  // اليوم هو العنصر رقم 14 من شريط الأيام (عرض كل عنصر 64)
+  final ScrollController _strip = ScrollController(initialScrollOffset: 14 * 64.0 - 120);
+
+  @override
+  void dispose() {
+    _strip.dispose();
+    super.dispose();
+  }
 
   String _greeting() {
     final h = DateTime.now().hour;
@@ -62,10 +73,23 @@ class _TodayScreenState extends State<TodayScreen> {
     final habits = store.active;
     final all = store.allStats();
 
+    final allTasks = store.tasks;
+    final dayTasks = allTasks.where((t) => t.level == PeriodType.day && t.anchor == day).toList();
+    final overdueTasks = day == today
+        ? allTasks.where((t) => t.level == PeriodType.day && taskOverdue(t, allTasks, ws, today)).toList()
+        : <Task>[];
+    final tasksDone = dayTasks.where((t) => taskIsDone(t, allTasks)).length;
     int total = habits.length;
     int met = 0;
     for (final h in habits) {
       if (periodMetAtDay(h, ws, day)) met++;
+    }
+    if (day > today) {
+      total = dayTasks.length;
+      met = tasksDone;
+    } else {
+      total += dayTasks.length;
+      met += tasksDone;
     }
     int xp = 0;
     for (final h in store.habits) {
@@ -117,7 +141,7 @@ class _TodayScreenState extends State<TodayScreen> {
               ),
               const SizedBox(height: 14),
               GestureDetector(
-                onTap: () => widget.goTab(3),
+                onTap: () => widget.goTab(4),
                 child: Row(
                   children: [
                     Text('🛡️ ${lvl.title}  •  م${lvl.level}',
@@ -141,7 +165,7 @@ class _TodayScreenState extends State<TodayScreen> {
               ),
               const SizedBox(height: 10),
               GestureDetector(
-                onTap: () => widget.goTab(2),
+                onTap: () => widget.goTab(3),
                 child: Text(_nextPrayer(store.settings),
                     style: const TextStyle(color: kMuted, fontSize: 12.5)),
               ),
@@ -154,12 +178,15 @@ class _TodayScreenState extends State<TodayScreen> {
         SizedBox(
           height: 78,
           child: ListView.builder(
+            controller: _strip,
             scrollDirection: Axis.horizontal,
-            itemCount: 21,
+            itemCount: 45,
             itemBuilder: (context, i) {
-              final d = today - i;
+              final d = today - 14 + i;
               final sel = d == day;
-              final ratio = _dayRatio(habits, d, ws);
+              final future = d > today;
+              final hasPlan = allTasks.any((t) => t.level == PeriodType.day && t.anchor == d);
+              final ratio = future ? (hasPlan ? 0.5 : 0.0) : _dayRatio(habits, d, ws);
               return Padding(
                 padding: const EdgeInsets.only(left: 8),
                 child: GestureDetector(
@@ -175,7 +202,7 @@ class _TodayScreenState extends State<TodayScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(i == 0 ? 'اليوم' : kWeekdaysShort[weekdayOf(d) - 1],
+                        Text(d == today ? 'اليوم' : (d == today + 1 ? 'غدًا' : kWeekdaysShort[weekdayOf(d) - 1]),
                             style: TextStyle(color: sel ? kEmerald : kMuted, fontSize: 11.5)),
                         const SizedBox(height: 3),
                         Text('${dateOf(d).day}',
@@ -186,11 +213,13 @@ class _TodayScreenState extends State<TodayScreen> {
                           height: 4,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(4),
-                            color: ratio >= 1
-                                ? kEmerald
-                                : ratio > 0
-                                    ? a(kEmerald, 0.45)
-                                    : kLine,
+                            color: future
+                                ? (hasPlan ? a(kGold, 0.8) : kLine)
+                                : (ratio >= 1
+                                    ? kEmerald
+                                    : ratio > 0
+                                        ? a(kEmerald, 0.45)
+                                        : kLine),
                           ),
                         ),
                       ],
@@ -215,9 +244,9 @@ class _TodayScreenState extends State<TodayScreen> {
                 children: [
                   const Icon(Icons.history_rounded, color: kGold, size: 18),
                   const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text('أنت تعدّل يومًا سابقًا',
-                        style: TextStyle(color: kGold, fontSize: 12.5)),
+                  Expanded(
+                    child: Text(day > today ? 'يوم مخطَّط: للعرض والتخطيط فقط، لا تسجيل مسبق' : 'أنت تعدّل يومًا سابقًا',
+                        style: const TextStyle(color: kGold, fontSize: 12.5)),
                   ),
                   GestureDetector(
                     onTap: () => setState(() => picked = null),
@@ -229,9 +258,26 @@ class _TodayScreenState extends State<TodayScreen> {
             ),
           ),
 
-        if (habits.isEmpty) _empty(context),
+        if (habits.isEmpty && store.tasks.isEmpty) _empty(context),
 
         for (final p in PeriodType.values) ..._section(context, store, habits, all, p, day, ws),
+        if (overdueTasks.isNotEmpty) ...[
+          SectionTitle('مهام متأخرة', trailing: Text('${overdueTasks.length}', style: const TextStyle(color: kDanger))),
+          for (final t in overdueTasks) Padding(padding: const EdgeInsets.only(bottom: 8), child: TaskTile(task: t)),
+        ],
+        SectionTitle(
+          day == today ? 'مهام اليوم' : 'مهام هذا اليوم',
+          trailing: GestureDetector(
+            onTap: () => showTaskEditor(context, level: PeriodType.day, anchor: day),
+            child: const Text('+ مهمة', style: TextStyle(color: kEmerald, fontWeight: FontWeight.w800)),
+          ),
+        ),
+        if (dayTasks.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8, right: 4),
+            child: Text('لا مهام مجدولة لهذا اليوم.', style: TextStyle(color: kMuted, fontSize: 13)),
+          ),
+        for (final t in dayTasks) Padding(padding: const EdgeInsets.only(bottom: 8), child: TaskTile(task: t)),
       ],
     );
   }
@@ -241,7 +287,7 @@ class _TodayScreenState extends State<TodayScreen> {
     final list = habits.where((h) => h.period == p).toList();
     if (list.isEmpty) return const [];
     return [
-      SectionTitle('مهام ${periodAdj(p)}ة'.replaceAll('يةة', 'ية'),
+      SectionTitle('عادات ${periodAdj(p)}ة'.replaceAll('يةة', 'ية'),
           trailing: Text('${list.length}', style: const TextStyle(color: kMuted))),
       for (final h in list)
         Padding(
